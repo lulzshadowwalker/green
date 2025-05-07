@@ -9,6 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  fl_chart: ^0.71.0
+  hooks_riverpod: ^2.6.1
+  flutter_hooks: ^0.21.2
+  dio: ^5.8.0+1
 
 dev_dependencies:
   flutter_test:
