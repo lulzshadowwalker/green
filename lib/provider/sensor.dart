@@ -7,5 +7,5 @@ final sensorRepositoryProvider =
     Provider<SensorRepository>((ref) => GoSensorRepository());
 
 final sensorDataProvider =
-    FutureProvider<Map<SensorType, List<SensorReading>>>((ref) =>
+    StreamProvider<Map<SensorType, List<SensorReading>>>((ref) =>
         ref.read(sensorRepositoryProvider).fetchAll());

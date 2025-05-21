@@ -609,6 +609,7 @@ class HealthCheck extends ConsumerWidget {
     );
   }
 }
+
 class DataChart extends HookConsumerWidget {
   const DataChart({super.key});
 
@@ -639,11 +640,14 @@ class DataChart extends HookConsumerWidget {
                     itemBuilder: (_, i) {
                       final type = pages[i].key;
                       final readings = pages[i].value;
-                      final spots = readings
-                          .asMap()
-                          .entries
-                          .map((e) => FlSpot(e.key.toDouble(), e.value.value))
-                          .toList();
+                      final spots =
+                          readings
+                              .asMap()
+                              .entries
+                              .map(
+                                (e) => FlSpot(e.key.toDouble(), e.value.value),
+                              )
+                              .toList();
                       return SensorChartCard(
                         title: type.displayName,
                         icon: type.icon,
@@ -663,15 +667,13 @@ class DataChart extends HookConsumerWidget {
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
-                    width: isActive ? 11 : 8,
-                    height: isActive ? 11 : 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? Colors.black
-                          : Colors.grey.shade300,
-                      shape: BoxShape.circle,
-                    ),
+                  width: isActive ? 11 : 8,
+                  height: isActive ? 11 : 8,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: isActive ? Colors.black : Colors.grey.shade300,
+                    shape: BoxShape.circle,
+                  ),
                 );
               }),
             ),
