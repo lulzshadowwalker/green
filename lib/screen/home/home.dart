@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:green/contract/health_repository.dart';
 import 'package:green/model/sensor_reading.dart';
+import 'package:green/provider/control.dart';
 import 'package:green/provider/health.dart';
 import 'package:green/provider/sensor.dart';
 import 'package:green/provider/summary.dart';
@@ -155,10 +156,8 @@ class Home extends StatelessWidget {
                 ),
               ),
             ),
-
             const SizedBox(height: 20),
             const DataChart(),
-
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -170,53 +169,129 @@ class Home extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Smart Greenhouse',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: secondary,
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      'Smart Greenhouse',
+                      textAlign: TextAlign.start,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: secondary,
+                      ),
                     ),
-                  ),
-                  GridView.count(
-                    padding: EdgeInsets.only(top: 24),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    childAspectRatio: 1,
-                    children: const [
-                      _ControlCard(
-                        isActive: true,
-                        icon: Icons.lightbulb,
-                        title: 'Lighting',
-                        value: '12 Watt',
-                      ),
-                      _ControlCard(
-                        icon: Icons.thermostat_outlined,
-                        title: 'Temperature',
-                        value: '24° Celsius',
-                      ),
-                      _ControlCard(
-                        icon: Icons.water_drop_outlined,
-                        title: 'Watering',
-                        value: '200 ml',
-                      ),
-                      _ControlCard(
-                        icon: Icons.air_outlined,
-                        title: 'Ventilation',
-                        value: '10 m/s',
-                      ),
-                    ],
                   ),
                 ],
               ),
             ),
+            Consumer(
+              builder: (context, ref, _) {
+                final controlStatusAsync = ref.watch(controlStatusProvider);
+                return controlStatusAsync.when(
+                  loading:
+                      () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Center(child: Text('Error: $e')),
+                  data: (controlStatus) {
+                    final controls = [
+                      {
+                        'sensorType': 'light',
+                        'icon': Icons.lightbulb,
+                        'title': 'Lighting',
+                        'unit': 'Watt',
+                        'isBool': false,
+                        'min': 0,
+                        'max': 255,
+                      },
+                      {
+                        'sensorType': 'heat',
+                        'icon': Icons.thermostat_outlined,
+                        'title': 'Temperature',
+                        'unit': '',
+                        'isBool': false,
+                        'min': 0,
+                        'max': 255,
+                      },
+                      {
+                        'sensorType': 'pump',
+                        'icon': Icons.water_drop_outlined,
+                        'title': 'Watering',
+                        'unit': '',
+                        'isBool': true,
+                      },
+                      {
+                        'sensorType': 'fan',
+                        'icon': Icons.air_outlined,
+                        'title': 'Ventilation',
+                        'unit': 'm/s',
+                        'isBool': false,
+                        'min': 0,
+                        'max': 255,
+                      },
+                      {
+                        'sensorType': 'door',
+                        'icon': Icons.door_front_door,
+                        'title': 'Door',
+                        'unit': '',
+                        'isBool': true,
+                      },
+                    ];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: GridView.count(
+                        padding: const EdgeInsets.only(top: 24),
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        childAspectRatio: 1,
+                        children:
+                            controls.map((c) {
+                              final sensorType = c['sensorType'] as String;
+                              final mode = controlStatus.modeFor(sensorType);
+                              final value = controlStatus.valueFor(sensorType);
+                              return _ControlCard(
+                                sensorType: sensorType,
+                                icon: c['icon'] as IconData,
+                                title: c['title'] as String,
+                                mode: mode,
+                                value: value,
+                                unit: c['unit'] as String,
+                                isBool: c['isBool'] as bool,
+                                min: c['min'] as int?,
+                                max: c['max'] as int?,
+                                onToggle: (newMode, newValue, duration) {
+                                  ref
+                                      .read(controlRepositoryProvider)
+                                      .setControl(
+                                        sensorType: sensorType,
+                                        mode: newMode,
+                                        manualIntValue:
+                                            c['isBool'] as bool
+                                                ? null
+                                                : newValue as int?,
+                                        manualBoolValue:
+                                            c['isBool'] as bool
+                                                ? newValue as bool?
+                                                : null,
+                                        manualUntil:
+                                            duration != null
+                                                ? DateTime.now().add(duration)
+                                                : null,
+                                      );
+                                },
+                              );
+                            }).toList(),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
             const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    );
+          ], // <-- end Column children
+        ), // <-- end Column
+      ), // <-- end SingleChildScrollView
+    ); // <-- end Scaffold
   }
 }
 
@@ -257,43 +332,109 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-class _ControlCard extends StatelessWidget {
-  final bool isActive;
+class _ControlCard extends ConsumerWidget {
+  final String sensorType;
   final IconData icon;
   final String title;
-  final String value;
+  final String mode; // "automatic" or "manual"
+  final dynamic value; // int or bool or null
+  final String unit;
+  final bool isBool;
+  final int? min;
+  final int? max;
+  final void Function(String mode, dynamic value, Duration? duration) onToggle;
 
   const _ControlCard({
-    this.isActive = false,
+    Key? key,
+    required this.sensorType,
     required this.icon,
     required this.title,
+    required this.mode,
     required this.value,
-  });
+    required this.unit,
+    required this.isBool,
+    this.min,
+    this.max,
+    required this.onToggle,
+  }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final background = isActive ? secondary : primary;
-    final textColor = isActive ? primary : Colors.black;
-    final subtitleColor = isActive ? Colors.white70 : Colors.grey.shade600;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isManual = mode == 'manual';
+    final isOn =
+        isBool ? (value == true) : (value != null && value is int && value > 0);
+
+    final background = isManual ? secondary : primary;
+    final textColor = isManual ? primary : Colors.black;
+    final subtitleColor = isManual ? Colors.white70 : Colors.grey.shade600;
 
     return Container(
       decoration: BoxDecoration(
         color: background,
         border: Border.all(color: Colors.grey.shade200),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, color: isActive ? primary : accent),
+              CircleAvatar(
+                backgroundColor: isManual ? accent : Colors.grey.shade200,
+                child: Icon(icon, color: isManual ? Colors.white : accent),
+                radius: 20,
+              ),
               const Spacer(),
-              Switch(
-                value: isActive,
-                onChanged: (_) {},
-                activeColor: secondaryAlt,
+              GestureDetector(
+                onTap:
+                    isManual
+                        ? () {
+                          // Switch back to automatic when badge is tapped
+                          onToggle('automatic', null, null);
+                        }
+                        : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isManual ? accent : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isManual ? 'Manual' : 'Auto',
+                        style: TextStyle(
+                          color: isManual ? Colors.white : Colors.black87,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          decoration:
+                              isManual ? TextDecoration.underline : null,
+                        ),
+                      ),
+                      if (isManual)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4.0),
+                          child: Icon(
+                            Icons.close,
+                            size: 14,
+                            color: Colors.white70,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -305,12 +446,57 @@ class _ControlCard extends StatelessWidget {
               color: textColor,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                isOn ? 'On' : 'Off',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: isOn ? accent : subtitleColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+
+              const Spacer(),
+              Switch(
+                value: isOn,
+                onChanged: (val) {
+                  if (isManual) {
+                    // Already manual, just toggle state
+                    if (isBool) {
+                      onToggle('manual', val, null);
+                    } else {
+                      onToggle('manual', val ? 255 : 0, null);
+                    }
+                    ref.invalidate(controlStatusProvider);
+                  } else {
+                    // Was auto, switch to manual and set state
+                    if (isBool) {
+                      onToggle('manual', val, null);
+                    } else {
+                      onToggle('manual', val ? 255 : 0, null);
+                    }
+                    // Show snackbar when switching from auto to manual
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '$title is now in manual mode. It will remain manual until you switch back to automatic.',
+                          style: const TextStyle(fontSize: 15),
+                        ),
+                        duration: const Duration(seconds: 3),
+                        behavior: SnackBarBehavior.floating,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                      ),
+                    );
+                    ref.invalidate(controlStatusProvider);
+                  }
+                },
+                activeColor: accent,
+              ),
+            ],
           ),
         ],
       ),
