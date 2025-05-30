@@ -3,11 +3,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:green/contract/health_repository.dart';
 import 'package:green/model/sensor_reading.dart';
+import 'package:green/model/sensor_timespan.dart';
 import 'package:green/provider/control.dart';
 import 'package:green/provider/health.dart';
 import 'package:green/provider/sensor.dart';
 import 'package:green/provider/summary.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:shimmer/shimmer.dart';
 
 const primary = Color(0xFFFCFBFC);
 const secondary = Color(0xFF093731);
@@ -273,10 +275,9 @@ class Home extends StatelessWidget {
                                             c['isBool'] as bool
                                                 ? newValue as bool?
                                                 : null,
-                                        manualUntil:
-                                            duration != null
-                                                ? DateTime.now().add(duration)
-                                                : null,
+                                        manualUntil: DateTime.now().add(
+                                          const Duration(hours: 6),
+                                        ),
                                       );
                                 },
                               );
@@ -345,7 +346,6 @@ class _ControlCard extends ConsumerWidget {
   final void Function(String mode, dynamic value, Duration? duration) onToggle;
 
   const _ControlCard({
-    Key? key,
     required this.sensorType,
     required this.icon,
     required this.title,
@@ -356,7 +356,7 @@ class _ControlCard extends ConsumerWidget {
     this.min,
     this.max,
     required this.onToggle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -389,8 +389,8 @@ class _ControlCard extends ConsumerWidget {
             children: [
               CircleAvatar(
                 backgroundColor: isManual ? accent : Colors.grey.shade200,
-                child: Icon(icon, color: isManual ? Colors.white : accent),
                 radius: 20,
+                child: Icon(icon, color: isManual ? Colors.white : accent),
               ),
               const Spacer(),
               GestureDetector(
@@ -468,7 +468,6 @@ class _ControlCard extends ConsumerWidget {
                     } else {
                       onToggle('manual', val ? 255 : 0, null);
                     }
-                    ref.invalidate(controlStatusProvider);
                   } else {
                     // Was auto, switch to manual and set state
                     if (isBool) {
@@ -480,7 +479,7 @@ class _ControlCard extends ConsumerWidget {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          '$title is now in manual mode. It will remain manual until you switch back to automatic.',
+                          '$title is now in manual mode for 6 hours. It will return to automatic after that unless you switch it back manually.',
                           style: const TextStyle(fontSize: 15),
                         ),
                         duration: const Duration(seconds: 3),
@@ -491,8 +490,9 @@ class _ControlCard extends ConsumerWidget {
                         ),
                       ),
                     );
-                    ref.invalidate(controlStatusProvider);
                   }
+
+                  ref.invalidate(controlStatusProvider);
                 },
                 activeColor: accent,
               ),
@@ -801,71 +801,253 @@ class DataChart extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncData = ref.watch(sensorDataProvider);
+    final timespan = useState(SensorTimespan.day);
+
+    // Update this to use your provider with timespan
+    final asyncData = ref.watch(sensorDataProvider(timespan.value));
     final controller = usePageController();
     final currentPage = useState(0);
 
-    return asyncData.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
-      data: (map) {
-        final pages = map.entries.where((e) => e.value.isNotEmpty).toList();
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-              child: SizedBox(
-                height: 240,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  clipBehavior: Clip.hardEdge,
-                  child: PageView.builder(
-                    controller: controller,
-                    itemCount: pages.length,
-                    onPageChanged: (i) => currentPage.value = i,
-                    itemBuilder: (_, i) {
-                      final type = pages[i].key;
-                      final readings = pages[i].value;
-                      final spots =
-                          readings
-                              .asMap()
-                              .entries
-                              .map(
-                                (e) => FlSpot(e.key.toDouble(), e.value.value),
-                              )
-                              .toList();
-                      return SensorChartCard(
-                        title: type.displayName,
-                        icon: type.icon,
-                        primaryColor: type.color,
-                        dataPoints: spots,
-                      );
-                    },
+    return Column(
+      children: [
+        // Custom pill-style segmented control for timespan selection
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _TimespanPill(
+                label: '6h',
+                selected: timespan.value == SensorTimespan.sixHours,
+                onTap: () => timespan.value = SensorTimespan.sixHours,
+                context: context,
+              ),
+              _TimespanPill(
+                label: 'Day',
+                selected: timespan.value == SensorTimespan.day,
+                onTap: () => timespan.value = SensorTimespan.day,
+                context: context,
+              ),
+              _TimespanPill(
+                label: 'Week',
+                selected: timespan.value == SensorTimespan.week,
+                onTap: () => timespan.value = SensorTimespan.week,
+                context: context,
+              ),
+            ],
+          ),
+        ),
+        asyncData.when(
+          loading:
+              () => Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                child: SizedBox(
+                  height: 240,
+                  child: Shimmer.fromColors(
+                    baseColor: Colors.grey.shade200,
+                    highlightColor: Colors.grey.shade100,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            height: 32,
+                            width: 120,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Container(
+                            height: 120,
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(horizontal: 24),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              3,
+                              (i) => Container(
+                                width: 11,
+                                height: 11,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade300,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(pages.length, (i) {
-                final isActive = i == currentPage.value;
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  width: isActive ? 11 : 8,
-                  height: isActive ? 11 : 8,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: isActive ? Colors.black : Colors.grey.shade300,
-                    shape: BoxShape.circle,
+          error: (e, _) => Center(child: Text('Error: $e')),
+          data: (map) {
+            final pages = map.entries.where((e) => e.value.isNotEmpty).toList();
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                  child: SizedBox(
+                    height: 240,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      clipBehavior: Clip.hardEdge,
+                      child:
+                          pages.isNotEmpty
+                              ? PageView.builder(
+                                controller: controller,
+                                itemCount: pages.length,
+                                onPageChanged: (i) => currentPage.value = i,
+                                itemBuilder: (_, i) {
+                                  final type = pages[i].key;
+                                  final readings = pages[i].value;
+                                  final spots =
+                                      readings
+                                          .asMap()
+                                          .entries
+                                          .map(
+                                            (e) => FlSpot(
+                                              e.key.toDouble(),
+                                              e.value.value,
+                                            ),
+                                          )
+                                          .toList();
+                                  return SensorChartCard(
+                                    title: type.displayName,
+                                    icon: type.icon,
+                                    primaryColor: type.color,
+                                    dataPoints: spots,
+                                  );
+                                },
+                              )
+                              : Container(
+                                color: Colors.white,
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.insights_outlined,
+                                        size: 48,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        "No data available for this timespan.",
+                                        style: TextStyle(
+                                          color: Colors.grey.shade500,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                    ),
                   ),
-                );
-              }),
+                ),
+                const SizedBox(height: 12),
+                if (pages.isNotEmpty)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(pages.length, (i) {
+                      final isActive = i == currentPage.value;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        width: isActive ? 11 : 8,
+                        height: isActive ? 11 : 8,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: isActive ? Colors.black : Colors.grey.shade300,
+                          shape: BoxShape.circle,
+                        ),
+                      );
+                    }),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _TimespanPill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final BuildContext context;
+
+  const _TimespanPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.context,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext _) {
+    // Use the same color scheme as _ControlCard
+    final Color background = selected ? secondary : primary;
+    final Color textColor = selected ? primary : Colors.black;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        decoration: BoxDecoration(
+          color: background,
+          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
-        );
-      },
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
